@@ -335,123 +335,114 @@ with tAI:
     key = (st.secrets.get("COHERE_API_KEY") if hasattr(st, "secrets") else None) or os.getenv("COHERE_API_KEY")
     if cohere is None:
         st.error("Le paquet `cohere` n'est pas installé. Ajoute `cohere>=5.3.0` dans requirements.txt.")
-        return
-    if not key:
+    elif not key:
         st.warning("Ajoute ta clé Cohere : **Manage app → Settings → Secrets** puis `COHERE_API_KEY = \"sk_...\"`.")
-        return
-
-    model = st.selectbox("Modèle Cohere", [
-        "command-r-08-2024",
-        "command-r-plus-08-2024", 
-        "command-a-03-2025"
-    ], index=0)
-    user_q = st.text_area(
-        "Que veux-tu voir/obtenir ?",
-        placeholder="Ex. « moyenne du prix par catégorie pour 2023 », « top 10 des régions par ventes », « évolution mensuelle du CA »…"
-    )
-
-    if no_data:
-        st.info("Charge d'abord un CSV dans les autres onglets, puis formule ta demande ici.")
     else:
+        model = st.selectbox("Modèle Cohere", [
+            "command-r-08-2024",
+            "command-r-plus-08-2024", 
+            "command-a-03-2025"
+        ], index=0)
+        user_q = st.text_area(
+            "Que veux-tu voir/obtenir ?",
+            placeholder="Ex. « moyenne du prix par catégorie pour 2023 », « top 10 des régions par ventes », « évolution mensuelle du CA »…"
+        )
+
+        if no_data:
+            st.info("Charge d'abord un CSV dans les autres onglets, puis formule ta demande ici.")
+        else:
         # Schéma & échantillon fournis au modèle
         schema = [{"name": c, "dtype": str(df[c].dtype)} for c in df.columns]
         sample = df.head(10).to_dict(orient="records")
 
-        if st.button("Générer le résultat"):
-            if not user_q or not user_q.strip():
-                st.warning("Veuillez entrer une question.")
-                return
-            
-            try:
-                client = cohere.Client(key)
-            except Exception as e:
-                st.error(f"Erreur d'initialisation du client Cohere : {e}")
-                return
+            if st.button("Générer le résultat"):
+                if not user_q or not user_q.strip():
+                    st.warning("Veuillez entrer une question.")
+                else:
+                    try:
+                        client = cohere.Client(key)
+                    except Exception as e:
+                        st.error(f"Erreur d'initialisation du client Cohere : {e}")
+                    else:
+                        system = (
+                            "Tu traduis la demande utilisateur en un **plan JSON** pour manipuler un DataFrame pandas nommé df. "
+                            "Réponds **UNIQUEMENT** avec un JSON valide suivant ce schéma strict :\n"
+                            "{\n"
+                            '  "select": [string]? ,\n'
+                            '  "where": [{"col": str, "op": "==|!=|>|<|>=|<=", "value": any, "join": "and|or"}]?,\n'
+                            '  "groupby": [string]? ,\n'
+                            '  "agg": {string: "count|sum|mean|median|min|max|std|nunique"}? ,\n'
+                            '  "sort_by": [string]? ,\n'
+                            '  "ascending": bool?,\n'
+                            '  "top_n": int? ,\n'
+                            '  "chart": {"type":"bar|line|hist","x":str,"y":str}?\n'
+                            "}\n"
+                            "Règles : n'invente pas de colonnes ; reste dans ce schéma ; pas d'explications en texte."
+                        )
 
-            system = (
-                "Tu traduis la demande utilisateur en un **plan JSON** pour manipuler un DataFrame pandas nommé df. "
-                "Réponds **UNIQUEMENT** avec un JSON valide suivant ce schéma strict :\n"
-                "{\n"
-                '  "select": [string]? ,\n'
-                '  "where": [{"col": str, "op": "==|!=|>|<|>=|<=", "value": any, "join": "and|or"}]?,\n'
-                '  "groupby": [string]? ,\n'
-                '  "agg": {string: "count|sum|mean|median|min|max|std|nunique"}? ,\n'
-                '  "sort_by": [string]? ,\n'
-                '  "ascending": bool?,\n'
-                '  "top_n": int? ,\n'
-                '  "chart": {"type":"bar|line|hist","x":str,"y":str}?\n'
-                "}\n"
-                "Règles : n'invente pas de colonnes ; reste dans ce schéma ; pas d'explications en texte."
-            )
+                        user = (
+                            f"Colonnes & dtypes: {schema}\n"
+                            f"Exemples (10 lignes): {sample}\n"
+                            f"Demande: {user_q}\n"
+                            "Réponds uniquement le JSON."
+                        )
 
-            user = (
-                f"Colonnes & dtypes: {schema}\n"
-                f"Exemples (10 lignes): {sample}\n"
-                f"Demande: {user_q}\n"
-                "Réponds uniquement le JSON."
-            )
+                        with st.spinner("Génération en cours..."):
+                            try:
+                                resp = client.chat(
+                                    model=model,
+                                    message=user,
+                                    preamble=system
+                                )
+                            except Exception as e:
+                                st.error(f"Appel Cohere échoué : {e}")
+                                st.info("💡 Vérifiez que votre clé API Cohere est correcte et que vous avez des crédits disponibles.")
+                            else:
+                                # Extraction de la réponse
+                                try:
+                                    raw = resp.text if hasattr(resp, "text") and resp.text else str(resp)
+                                except Exception as e:
+                                    st.error(f"Erreur lors de l'extraction de la réponse : {e}")
+                                else:
+                                    if not raw or not raw.strip():
+                                        st.error("Réponse vide du modèle.")
+                                    else:
+                                        # Nettoyer la réponse (enlever markdown code blocks si présent)
+                                        raw_clean = raw.strip()
+                                        if raw_clean.startswith("```json"):
+                                            raw_clean = raw_clean[7:]
+                                        elif raw_clean.startswith("```"):
+                                            raw_clean = raw_clean[3:]
+                                        if raw_clean.endswith("```"):
+                                            raw_clean = raw_clean[:-3]
+                                        raw_clean = raw_clean.strip()
+                                        
+                                        try:
+                                            plan = json.loads(raw_clean)
+                                        except json.JSONDecodeError as e:
+                                            st.error("Réponse non-JSON du modèle. Voici le retour brut :")
+                                            st.code(raw)
+                                            st.info("💡 Le modèle n'a pas retourné un JSON valide. Essayez de reformuler votre question.")
+                                        else:
+                                            st.write("**Plan généré**")
+                                            st.json(plan)
 
-            with st.spinner("Génération en cours..."):
-                try:
-                    resp = client.chat(
-                        model=model,
-                        message=user,
-                        preamble=system
-                    )
-                except Exception as e:
-                    st.error(f"Appel Cohere échoué : {e}")
-                    st.info("💡 Vérifiez que votre clé API Cohere est correcte et que vous avez des crédits disponibles.")
-                    return
+                                            try:
+                                                out = _apply_plan(df, plan)
+                                            except Exception as e:
+                                                st.error(f"Erreur lors de l'application du plan: {e}")
+                                                st.info("💡 Le plan généré n'a pas pu être appliqué aux données. Vérifiez les colonnes mentionnées.")
+                                            else:
+                                                st.subheader("Résultat")
+                                                st.dataframe(out, use_container_width=True)
 
-                # Extraction de la réponse
-                try:
-                    raw = resp.text if hasattr(resp, "text") and resp.text else str(resp)
-                except Exception as e:
-                    st.error(f"Erreur lors de l'extraction de la réponse : {e}")
-                    return
-                    
-                if not raw or not raw.strip():
-                    st.error("Réponse vide du modèle.")
-                    return
-
-                # Nettoyer la réponse (enlever markdown code blocks si présent)
-                raw_clean = raw.strip()
-                if raw_clean.startswith("```json"):
-                    raw_clean = raw_clean[7:]
-                elif raw_clean.startswith("```"):
-                    raw_clean = raw_clean[3:]
-                if raw_clean.endswith("```"):
-                    raw_clean = raw_clean[:-3]
-                raw_clean = raw_clean.strip()
-                
-                try:
-                    plan = json.loads(raw_clean)
-                except json.JSONDecodeError as e:
-                    st.error("Réponse non-JSON du modèle. Voici le retour brut :")
-                    st.code(raw)
-                    st.info("💡 Le modèle n'a pas retourné un JSON valide. Essayez de reformuler votre question.")
-                    return
-
-            st.write("**Plan généré**")
-            st.json(plan)
-
-            try:
-                out = _apply_plan(df, plan)
-            except Exception as e:
-                st.error(f"Erreur lors de l'application du plan: {e}")
-                st.info("💡 Le plan généré n'a pas pu être appliqué aux données. Vérifiez les colonnes mentionnées.")
-                return
-
-            st.subheader("Résultat")
-            st.dataframe(out, use_container_width=True)
-
-            ch = plan.get("chart") or {}
-            if {"type","x","y"} <= set(ch) and ch["x"] in out.columns and ch["y"] in out.columns:
-                if ch["type"] == "line":
-                    st.line_chart(out.set_index(ch["x"])[ch["y"]])
-                elif ch["type"] == "hist":
-                    st.bar_chart(out[ch["y"]].value_counts())
-                else:  # bar
-                    st.bar_chart(out.set_index(ch["x"])[ch["y"]])
+                                                ch = plan.get("chart") or {}
+                                                if {"type","x","y"} <= set(ch) and ch["x"] in out.columns and ch["y"] in out.columns:
+                                                    if ch["type"] == "line":
+                                                        st.line_chart(out.set_index(ch["x"])[ch["y"]])
+                                                    elif ch["type"] == "hist":
+                                                        st.bar_chart(out[ch["y"]].value_counts())
+                                                    else:  # bar
+                                                        st.bar_chart(out.set_index(ch["x"])[ch["y"]])
 
 

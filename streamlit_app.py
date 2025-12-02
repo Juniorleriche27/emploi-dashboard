@@ -380,23 +380,34 @@ with tAI:
             )
 
             try:
-                resp = client.chat(model=model, messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user",   "content": user},
-                ])
+                resp = client.chat(
+                    model=model,
+                    message=user,
+                    preamble=system
+                )
             except Exception as e:
                 st.error(f"Appel Cohere échoué : {e}")
                 st.stop()
 
-            # Compat v5
-            raw = getattr(resp, "text", None) or (resp.message.content[0].text if getattr(resp, "message", None) else "")
+            # Extraction de la réponse
+            raw = resp.text if hasattr(resp, "text") else str(resp)
             if not raw:
                 st.error("Réponse vide du modèle.")
                 st.stop()
 
+            # Nettoyer la réponse (enlever markdown code blocks si présent)
+            raw_clean = raw.strip()
+            if raw_clean.startswith("```json"):
+                raw_clean = raw_clean[7:]
+            elif raw_clean.startswith("```"):
+                raw_clean = raw_clean[3:]
+            if raw_clean.endswith("```"):
+                raw_clean = raw_clean[:-3]
+            raw_clean = raw_clean.strip()
+            
             try:
-                plan = json.loads(raw)
-            except Exception:
+                plan = json.loads(raw_clean)
+            except json.JSONDecodeError:
                 st.error("Réponse non-JSON du modèle. Voici le retour brut :")
                 st.code(raw)
                 st.stop()

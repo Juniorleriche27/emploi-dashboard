@@ -340,7 +340,11 @@ with tAI:
         st.warning("Ajoute ta clé Cohere : **Manage app → Settings → Secrets** puis `COHERE_API_KEY = \"sk_...\"`.")
         return
 
-    model = st.selectbox("Modèle Cohere", ["command-r", "command-r-plus"], index=0)
+    model = st.selectbox("Modèle Cohere", [
+        "command-r-08-2024",
+        "command-r-plus-08-2024", 
+        "command-a-03-2025"
+    ], index=0)
     user_q = st.text_area(
         "Que veux-tu voir/obtenir ?",
         placeholder="Ex. « moyenne du prix par catégorie pour 2023 », « top 10 des régions par ventes », « évolution mensuelle du CA »…"

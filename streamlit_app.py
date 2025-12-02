@@ -351,9 +351,9 @@ with tAI:
         if no_data:
             st.info("Charge d'abord un CSV dans les autres onglets, puis formule ta demande ici.")
         else:
-        # Schéma & échantillon fournis au modèle
-        schema = [{"name": c, "dtype": str(df[c].dtype)} for c in df.columns]
-        sample = df.head(10).to_dict(orient="records")
+            # Schéma & échantillon fournis au modèle
+            schema = [{"name": c, "dtype": str(df[c].dtype)} for c in df.columns]
+            sample = df.head(10).to_dict(orient="records")
 
             if st.button("Générer le résultat"):
                 if not user_q or not user_q.strip():
